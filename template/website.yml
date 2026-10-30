@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  asnomi.com Infra
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Tag config
+        Parameters:
+          - EnvTag
+          - Project
+Parameters:
+  EnvTag:
+    Type: String
+    Default: dev
+    Description: Set Enviroment Tag to AWS resource.
+    AllowedValues:
+      - prd
+      - dev
+
+  Project:
+    Type: String
+    Description: Set Project Name.
+
+  DomainName:
+    Type: String
+    Description: Set DomainName
+
+
+Resources:
+  WebHostingBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: !Ref DomainName
+      Tags: 
+        - Key: Name
+          Value: !Sub ${Project}-${EnvTag}-s3bucket
+        - Key: Env
+          Value: !Ref EnvTag
+        - Key: Project
+          Value: !Ref Project
+      WebsiteConfiguration: 
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      ObjectLockEnabled: false
+      VersioningConfiguration:
+        Status: Suspended
+
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref WebHostingBucket
+      PolicyDocument:
+        Statement:
+        - Action: "s3:GetObject"
+          Effect: Allow
+          Resource: 
+          - !Sub "arn:aws:s3:::${WebHostingBucket}/*"
+          - !Sub "arn:aws:s3:::${WebHostingBucket}"
+          Principal: 
+            CanonicalUser: !GetAtt cloudfrontoriginaccessidentity.S3CanonicalUserId
+
+  CloudFrontOriginAccessidentity:
+    DependsOn: WebHostingBucket
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: access-identity s3 bucket.
+
+  CloudFront:
+    DependsOn: WebHostingBucket
+    Type: AWS::CloudFront::Distribution
+    Properties: 
+      DistributionConfig: 
+        Aliases: 
+        - !Ref DomainName
+        Comment: for Contents Site
+        DefaultCacheBehavior: 
+          AllowedMethods: 
+          - GET
+          - HEAD
+          CachedMethods: 
+          - GET
+          - HEAD          
+          Compress: False
+          ViewerProtocolPolicy: https-only
+          TargetOriginId: !Sub "${WebHostingBucket}.s3.amazonaws.com"
+          ForwardedValues: 
+            Cookies:
+              Forward: none
+            QueryString: False
+        DefaultRootObject: index.html
+        Enabled: True
+        HttpVersion: http2
+        IPV6Enabled: True
+        Origins: 
+        - S3OriginConfig: 
+            OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessidentity}"
+          DomainName: !Sub "${WebHostingBucket}.s3.amazonaws.com"
+          Id: !Sub "${WebHostingBucket}.s3.amazonaws.com"
+        PriceClass: PriceClass_All
+        ViewerCertificate: 
+          AcmCertificateArn: !Ref AcmArn
+          MinimumProtocolVersion: TLSv1.2_2018
+          SslSupportMethod: sni-only
+      Tags:
+        - Key: Name
+          Value: !Sub ${Project}-${EnvTag}-cloudfront
+        - Key: Env
+          Value: !Ref EnvTag
+        - Key: Project
+          Value: !Ref Project

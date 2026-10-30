@@ -1,0 +1,11 @@
+version: '3.7'
+
+templatename:
+  website: website.yml
+stackname:
+  website: prd-website
+common:
+  WorkBucket: 
+  EnvTag: 
+  Project: 
+  DomainName: 
